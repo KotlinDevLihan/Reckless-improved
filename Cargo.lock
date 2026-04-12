@@ -166,8 +166,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "reckless"
-version = "0.10.0-dev"
+name = "reckless-improved"
+version = "0.0.1"
 dependencies = [
  "bindgen",
  "cc",
