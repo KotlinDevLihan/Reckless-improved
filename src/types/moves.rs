@@ -86,6 +86,10 @@ impl Move {
         (self.0 >> 14) & 1 != 0
     }
 
+    pub const fn is_special(self) -> bool {
+        (self.kind() as u8 & 11) != 0
+    }
+
     pub const fn is_promotion(self) -> bool {
         (self.0 >> 15) != 0
     }

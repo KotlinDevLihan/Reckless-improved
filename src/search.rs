@@ -69,6 +69,15 @@ pub fn start(td: &mut ThreadData, report: Report, thread_count: usize) {
 
     td.multi_pv = td.multi_pv.min(td.root_moves.len());
 
+    // Quick exit for forced move - only one legal move
+    if td.root_moves.len() == 1 && td.id == 0 {
+        td.completed_depth = 1;
+        if report == Report::Full {
+            td.print_uci_info(1);
+        }
+        return;
+    }
+
     let mut average = vec![td.previous_best_score; td.multi_pv];
     let mut last_best_rootmove = RootMove::default();
 
@@ -76,6 +85,8 @@ pub fn start(td: &mut ThreadData, report: Report, thread_count: usize) {
     let mut pv_stability = 0;
     let mut best_move_changes = 0;
     let mut soft_stop_voted = false;
+    let mut previous_nodes = 0u64;
+    let mut explosive_ply: i32 = 0;
 
     // Iterative Deepening
     for depth in 1..MAX_PLY as i32 {
@@ -102,6 +113,11 @@ pub fn start(td: &mut ThreadData, report: Report, thread_count: usize) {
         let mut delta = 15;
         let mut reduction = 0;
 
+        // Scale delta based on depth - wider windows at higher depths for stability
+        if depth > 6 {
+            delta = 12 + depth / 2;
+        }
+
         for index in 0..td.multi_pv {
             td.pv_index = index;
 
@@ -115,8 +131,10 @@ pub fn start(td: &mut ThreadData, report: Report, thread_count: usize) {
                 }
             }
 
-            // Aspiration Windows
-            delta += average[td.pv_index] * average[td.pv_index] / 25833;
+            // Aspiration Windows with dynamic sizing
+            // Start with smaller window, widen more aggressively on failures
+            let base_delta = 12 + average[td.pv_index].abs() / 100;
+            delta = delta.max(base_delta);
 
             let mut alpha = (average[td.pv_index] - delta).max(-Score::INFINITE);
             let mut beta = (average[td.pv_index] + delta).min(Score::INFINITE);
@@ -220,6 +238,18 @@ pub fn start(td: &mut ThreadData, report: Report, thread_count: usize) {
             break;
         }
 
+        // Search explosion detection - if nodes grow too fast, reduce time allowance
+        let current_nodes = td.nodes();
+        if depth > 4 {
+            let node_ratio = if previous_nodes > 0 { current_nodes as f64 / previous_nodes as f64 } else { 1.0 };
+            if node_ratio > 3.0 {
+                explosive_ply += 1;  // Position is explosive
+            } else {
+                explosive_ply = explosive_ply.saturating_sub(1);
+            }
+        }
+        previous_nodes = current_nodes;
+
         let multiplier = || {
             let nodes_factor = (2.7168 - 2.2669 * (td.root_moves[0].nodes as f32 / td.nodes() as f32)).max(0.5630_f32);
 
@@ -248,7 +278,10 @@ pub fn start(td: &mut ThreadData, report: Report, thread_count: usize) {
                 1.0
             };
 
-            nodes_factor * pv_stability * eval_stability * score_trend * best_move_stability * phase_factor * trend_factor * fail_high_factor
+            // Search explosion factor - spend less time in explosive positions
+            let explosion_factor = if explosive_ply >= 3 { 0.75 } else { 1.0 };
+
+            nodes_factor * pv_stability * eval_stability * score_trend * best_move_stability * phase_factor * trend_factor * fail_high_factor * explosion_factor
         };
 
         if td.time_manager.soft_limit(td, multiplier) {
@@ -1336,6 +1369,15 @@ fn qsearch<NODE: NodeType>(td: &mut ThreadData, mut alpha: i32, beta: i32, ply: 
             // Late Move Pruning (LMP)
             if move_count >= 3 && !td.board.is_direct_check(mv) {
                 break;
+            }
+
+            // Delta Pruning: prune captures that can't improve alpha even with best possible capture
+            if !in_check && !mv.is_promotion() {
+                let captured = td.board.piece_on(mv.to()).piece_type();
+                let delta = captured.value() + 200; // 200 is pawn value approximation for promotions
+                if eval + delta < alpha {
+                    continue;
+                }
             }
 
             // Static Exchange Evaluation Pruning (SEE Pruning)

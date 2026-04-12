@@ -220,8 +220,15 @@ impl TranspositionTable {
             entry.mv = mv;
         }
 
-        if !force && key == entry.key && depth + 4 + 2 * tt_pv as i32 <= entry.depth() && entry.flags.age() == tt_age {
-            return;
+        // Don't overwrite if existing entry is better, with stronger preference for PV and exact bounds
+        if !force && key == entry.key {
+            let depth_margin = if entry.flags.bound() == Bound::Exact { 4 } else { 0 };
+            let tt_pv_bonus = if entry.flags.tt_pv() { 2 } else { 0 };
+            let new_pv_bonus = if tt_pv { 1 } else { 0 };
+            
+            if depth + 4 + new_pv_bonus + depth_margin <= entry.depth() + tt_pv_bonus && entry.flags.age() == tt_age {
+                return;
+            }
         }
 
         // Adjust mate distance from "plies from the root" to "plies from the current position"
