@@ -239,7 +239,16 @@ pub fn start(td: &mut ThreadData, report: Report, thread_count: usize) {
             let eval_diff = (td.root_moves[0].score - td.previous_best_score).abs() as f32;
             let trend_factor = (1.0 + eval_diff / 200.0).min(1.3);
 
-            nodes_factor * pv_stability * eval_stability * score_trend * best_move_stability * phase_factor * trend_factor
+            // Fail-high bonus - extend time when we find a sudden improvement
+            let fail_high_factor = if td.root_moves[0].score >= td.previous_best_score + 80 {
+                1.2  // 20% more time on significant improvements
+            } else if td.root_moves[0].score <= td.previous_best_score - 100 {
+                1.15  // 15% more time on significant drops
+            } else {
+                1.0
+            };
+
+            nodes_factor * pv_stability * eval_stability * score_trend * best_move_stability * phase_factor * trend_factor * fail_high_factor
         };
 
         if td.time_manager.soft_limit(td, multiplier) {
@@ -286,6 +295,15 @@ fn search<NODE: NodeType>(
 
     if td.shared.status.get() == Status::STOPPED {
         return Score::ZERO;
+    }
+
+    // Mate Distance Pruning - can't improve on a mate we already have
+    if !NODE::ROOT {
+        alpha = alpha.max(mated_in(ply));
+        beta = beta.min(mate_in(ply + 1));
+        if alpha >= beta {
+            return alpha;
+        }
     }
 
     // Qsearch Dive
@@ -809,7 +827,10 @@ fn search<NODE: NodeType>(
                 (-8 * depth * depth - 36 * depth - 32 * history / 1024 + 11).min(0)
             };
 
-            if !td.board.see(mv, threshold) {
+            // Add depth margin for more aggressive pruning at deeper depths
+            let depth_margin = if depth > 8 { -16 * (depth - 8) } else { 0 };
+
+            if !td.board.see(mv, threshold + depth_margin) {
                 continue;
             }
         }
@@ -854,6 +875,16 @@ fn search<NODE: NodeType>(
             if !tt_pv && cut_node {
                 reduction += 1818;
                 reduction += 2118 * tt_move.is_null() as i32;
+            }
+
+            // Reduce less when current move matches TT move
+            if mv == tt_move {
+                reduction -= 1024;
+            }
+
+            // History-based LMR for noisy moves too
+            if !is_quiet && history < -2048 {
+                reduction += 256;
             }
 
             if !improving {
