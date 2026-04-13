@@ -1088,6 +1088,13 @@ fn search<NODE: NodeType>(
                 if score >= beta {
                     bound = Bound::Lower;
                     td.stack[ply].cutoff_count += 1;
+
+                    // Update killer moves for better move ordering
+                    if is_quiet && td.stack[ply].killer[0] != mv {
+                        td.stack[ply].killer[1] = td.stack[ply].killer[0];
+                        td.stack[ply].killer[0] = mv;
+                    }
+
                     break;
                 }
 
@@ -1337,6 +1344,12 @@ fn qsearch<NODE: NodeType>(td: &mut ThreadData, mut alpha: i32, beta: i32, ply: 
         }
     }
 
+    // Stand Pat with margin - avoid searching moves if eval is too good
+    const STAND_PAT_MARGIN: i32 = 100;
+    if best_score >= beta + STAND_PAT_MARGIN {
+        return best_score;
+    }
+
     // Stand Pat
     if best_score >= beta {
         if !is_decisive(best_score) && !is_decisive(beta) {
@@ -1354,6 +1367,18 @@ fn qsearch<NODE: NodeType>(td: &mut ThreadData, mut alpha: i32, beta: i32, ply: 
         alpha = best_score;
     }
 
+    // Qsearch futility pruning - if eval is far below alpha, only look at big captures
+    let futility_margin = if !in_check {
+        let margin = alpha - best_score - 100;
+        if margin > 500 {  // Too far below, need big captures
+            margin
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
     let mut best_move = Move::NULL;
 
     let mut move_count = 0;
@@ -1369,6 +1394,14 @@ fn qsearch<NODE: NodeType>(td: &mut ThreadData, mut alpha: i32, beta: i32, ply: 
             // Late Move Pruning (LMP)
             if move_count >= 3 && !td.board.is_direct_check(mv) {
                 break;
+            }
+
+            // Qsearch futility - skip small captures when far below alpha
+            if futility_margin > 0 && !in_check && !mv.is_promotion() {
+                let captured = td.board.piece_on(mv.to()).piece_type();
+                if captured.value() < futility_margin {
+                    continue;
+                }
             }
 
             // Delta Pruning: prune captures that can't improve alpha even with best possible capture

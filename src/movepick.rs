@@ -157,20 +157,25 @@ impl MovePicker {
         let threats = td.board.all_threats();
 
         if td.board.in_check() {
-            for entry in self.list.iter_mut() {
+            for (idx, entry) in self.list.iter_mut().enumerate() {
                 let mv = entry.mv;
                 let pt = td.board.piece_on(mv.from()).piece_type();
 
-                entry.score = 10000 - 1000 * pt as i32;
+                // First move bonus for better initial ordering
+                let first_bonus = if idx == 0 { 500 } else { 0 };
+                entry.score = 10000 - 1000 * pt as i32 + first_bonus;
             }
         } else {
-            for entry in self.list.iter_mut() {
+            for (idx, entry) in self.list.iter_mut().enumerate() {
                 let mv = entry.mv;
                 let captured =
                     if entry.mv.is_en_passant() { PieceType::Pawn } else { td.board.piece_on(mv.to()).piece_type() };
 
+                // First move bonus for better initial ordering
+                let first_bonus = if idx == 0 { 200 } else { 0 };
+
                 entry.score =
-                    16 * captured.value() + td.noisy_history.get(threats, td.board.moved_piece(mv), mv.to(), captured);
+                    16 * captured.value() + td.noisy_history.get(threats, td.board.moved_piece(mv), mv.to(), captured) + first_bonus;
 
                 if mv.is_promotion() && mv.promotion_piece() == Some(PieceType::Queen) {
                     entry.score += 4000;

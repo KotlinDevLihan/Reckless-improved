@@ -27,6 +27,10 @@ Reckless Improved includes major optimizations delivering an estimated **+40-70 
 - **Static Null Move Pruning**: Eval-based pruning for shallow depths
 - **History Leaf Pruning**: Prune quiet moves with very bad history
 - **Deferred Evaluation**: Skip expensive NNUE calls in qsearch when likely to fail high
+- **Delta Pruning**: Prune captures in qsearch that cannot raise alpha
+- **Qsearch Stand-pat Margin**: Early exit from qsearch when eval is far above beta
+- **Qsearch Futility**: Skip small captures when far below alpha in qsearch
+- **Forced Move Detection**: Quick exit when only one legal move at root
 
 ### Late Move Reductions (LMR)
 - **Threat-aware LMR**: Reduce less for moves that give check
@@ -36,12 +40,16 @@ Reckless Improved includes major optimizations delivering an estimated **+40-70 
 ### Move Ordering
 - **Counter Move History (CMH)**: New history table tracking good responses to specific moves
 - **CMH Integration**: Scoring and updates integrated throughout search
+- **Killer Move Heuristic**: Remember quiet moves that caused beta cutoffs at each ply
+- **First Move Bonus**: Give initial moves a scoring bonus for faster sorting convergence
 
 ### Time Management
 - **Complexity-based Allocation**: 15% more time in opening, 10% less in endgame
 - **Trend-based Adjustment**: More time for unstable positions
 - **Fail-high Bonus**: 20% more time on significant score improvements
 - **Fail-low Extension**: 15% more time on significant score drops
+- **Search Explosion Protection**: Detect and reduce time in explosive tactical positions
+- **Dynamic Aspiration Windows**: Scale window size based on depth for stability
 
 ### Performance Optimizations
 - **Move Picker**: O(1) move removal with swap_remove

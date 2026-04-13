@@ -37,6 +37,7 @@ impl Stack {
             entry.cutoff_count = 0;
             entry.move_count = 0;
             entry.reduction = 0;
+            entry.killer = [Move::NULL; 2];
             // conthist and contcorrhist are reset to sentinel
             entry.conthist = ptr;
             entry.contcorrhist = ptr;
@@ -66,6 +67,7 @@ pub struct StackEntry {
     pub reduction: i32,
     pub conthist: *mut [[i16; 64]; 13],
     pub contcorrhist: *mut [[i16; 64]; 13],
+    pub killer: [Move; 2],  // Killer moves for this ply
 }
 
 unsafe impl Send for StackEntry {}
@@ -84,6 +86,7 @@ impl Default for StackEntry {
             reduction: 0,
             conthist: std::ptr::null_mut(),
             contcorrhist: std::ptr::null_mut(),
+            killer: [Move::NULL; 2],
         }
     }
 }
