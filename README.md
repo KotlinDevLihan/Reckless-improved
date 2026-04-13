@@ -31,6 +31,9 @@ Reckless Improved includes major optimizations delivering an estimated **+40-70 
 - **Qsearch Stand-pat Margin**: Early exit from qsearch when eval is far above beta
 - **Qsearch Futility**: Skip small captures when far below alpha in qsearch
 - **Forced Move Detection**: Quick exit when only one legal move at root
+- **Double Extension Limit**: Prevent search explosion from consecutive extensions
+- **Improved PV Re-search**: Use narrow window verification before full PV search
+- **LMR at Root**: Reduce depth after first few moves at root for faster convergence
 
 ### Late Move Reductions (LMR)
 - **Threat-aware LMR**: Reduce less for moves that give check

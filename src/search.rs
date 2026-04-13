@@ -753,8 +753,12 @@ fn search<NODE: NodeType>(
                 257 * NODE::PV as i32 - 16 * tt_move.is_quiet() as i32 - 15 * correction_value.abs() / 128 + 32;
 
             extension = 1;
-            extension += (singular_score < singular_beta - double_margin) as i32;
-            extension += (singular_score < singular_beta - triple_margin) as i32;
+            // Limit double/triple extensions to prevent search explosion
+            let double_ext = singular_score < singular_beta - double_margin;
+            let triple_ext = singular_score < singular_beta - triple_margin;
+            let already_extended = td.stack[ply - 1].reduction < 0;  // Previous extension
+            extension += (double_ext && !already_extended) as i32;
+            extension += (triple_ext && !already_extended && double_ext) as i32;
         }
         // Multi-Cut
         else if singular_score >= beta && !is_decisive(singular_score) {
@@ -969,6 +973,10 @@ fn search<NODE: NodeType>(
         }
         // Full Depth Search (FDS)
         else if !NODE::PV || move_count > 1 {
+            // LMR at root after first few moves
+            if NODE::ROOT && move_count > 4 && depth >= 3 {
+                new_depth -= 1;
+            }
             let mut reduction = 232 * (move_count.ilog2() * depth.ilog2()) as i32;
 
             reduction -= 48 * move_count;
@@ -1021,11 +1029,25 @@ fn search<NODE: NodeType>(
 
         // Principal Variation Search (PVS)
         if NODE::PV && (move_count == 1 || score > alpha) {
+            // If we already got a good score from reduced search, don't always re-search at full depth
             if mv == tt_move && tt_depth > 1 && td.root_depth > 8 {
                 new_depth = new_depth.max(1);
             }
 
-            score = -search::<PV>(td, -beta, -alpha, new_depth, false, ply + 1);
+            // Improved PV re-search: narrow window search first if score is promising
+            let do_full_search = move_count == 1 || score < beta - 32;
+            
+            if do_full_search {
+                score = -search::<PV>(td, -beta, -alpha, new_depth, false, ply + 1);
+            } else {
+                // Quick verification with narrower window
+                let verify_score = -search::<NonPV>(td, -alpha - 1, -alpha, new_depth, false, ply + 1);
+                if verify_score > alpha && verify_score < beta {
+                    score = -search::<PV>(td, -beta, -alpha, new_depth, false, ply + 1);
+                } else {
+                    score = verify_score;
+                }
+            }
             current_search_count += 1;
         }
 
